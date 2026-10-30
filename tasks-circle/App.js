@@ -6,8 +6,8 @@ import {
 import TasksOverlay from './modules/tasks-overlay';
 
 const C = {
-  paper: '#edeee3', card: '#f7f6ee', ink: '#1f241f', soft: '#565f52', hint: '#9a9d8f',
-  teal: '#1f6f6b', tealDark: '#16514e', line: '#d8d8c8', red: '#a33a3a',
+  paper: '#ffffff', card: '#f4f4f4', ink: '#000000', soft: '#555555', hint: '#999999',
+  teal: '#000000', tealDark: '#000000', line: '#d6d6d6', red: '#000000',
 };
 
 // ---- dates (day only, no time) ----
@@ -47,7 +47,7 @@ function Main() {
   const [tasks, setTasks] = useState([]);
   const [on, setOn] = useState(false);
   const [text, setText] = useState('');
-  const [date, setDate] = useState(todayStr());
+  const [date, setDate] = useState('');   // optional: empty = this task has no date
   const [msg, setMsg] = useState('');
   const wantOn = useRef(false);   // waiting for the overlay permission
 
@@ -107,6 +107,7 @@ function Main() {
     if (!t) return;
     TasksOverlay.addTask(t, date);
     setText('');
+    setDate('');
     reload();
   };
 
@@ -130,7 +131,7 @@ function Main() {
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <Text style={s.eyebrow}>TASKS</Text>
         <Text style={s.title}>Things to do.</Text>
-        <Text style={s.sub}>Turn on the circle, then tap it from any app to see your list. Pick a date, tap + to add a task and − to remove one.</Text>
+        <Text style={s.sub}>Turn on the circle, then tap it from any app to see your list. Tap + to add a task (a date is optional) and − to remove one.</Text>
 
         <View style={s.circleRow}>
           <View style={{ flex: 1, paddingRight: 12 }}>
@@ -154,7 +155,7 @@ function Main() {
               </Pressable>
               <View style={s.taskCol}>
                 <Text style={s.taskText}>{t.text}</Text>
-                {t.date ? <Text style={[s.taskDate, dayDiff(t.date) < 0 && { color: C.red }]}>{dateLabel(t.date)}</Text> : null}
+                {t.date ? <Text style={[s.taskDate, dayDiff(t.date) < 0 && { color: C.ink, fontWeight: '700' }]}>{dateLabel(t.date)}</Text> : null}
               </View>
             </View>
           ))}
@@ -173,12 +174,19 @@ function Main() {
               <View style={[s.minus, s.plusV]} />
             </Pressable>
           </View>
-          <View style={s.dateRow}>
-            <Text style={s.dateLbl}>Date</Text>
-            <Pressable onPress={() => setDate(shiftDate(date, -1))} hitSlop={10}><Text style={s.step}>‹</Text></Pressable>
-            <Pressable onPress={() => setDate(todayStr())} hitSlop={6}><Text style={s.dateVal}>{dateLabel(date)}</Text></Pressable>
-            <Pressable onPress={() => setDate(shiftDate(date, 1))} hitSlop={10}><Text style={s.step}>›</Text></Pressable>
-          </View>
+          {date ? (
+            <View style={s.dateRow}>
+              <Text style={s.dateLbl}>Date</Text>
+              <Pressable onPress={() => setDate(shiftDate(date, -1))} hitSlop={10}><Text style={s.step}>‹</Text></Pressable>
+              <Pressable onPress={() => setDate(todayStr())} hitSlop={6}><Text style={s.dateVal}>{dateLabel(date)}</Text></Pressable>
+              <Pressable onPress={() => setDate(shiftDate(date, 1))} hitSlop={10}><Text style={s.step}>›</Text></Pressable>
+              <Pressable onPress={() => setDate('')} hitSlop={8}><Text style={s.clear}>Clear</Text></Pressable>
+            </View>
+          ) : (
+            <View style={s.dateRow}>
+              <Pressable onPress={() => setDate(todayStr())} hitSlop={8}><Text style={s.addDate}>+ Add a date (optional)</Text></Pressable>
+            </View>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -213,6 +221,8 @@ const s = StyleSheet.create({
   minusBtn: { borderWidth: 0, backgroundColor: 'transparent' },
   plusBtn: { borderWidth: 0, backgroundColor: 'transparent' },
   dateRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingBottom: 8 },
+  addDate: { color: C.soft, fontSize: 13.5 },
+  clear: { color: C.soft, fontSize: 13, marginLeft: 14, textDecorationLine: 'underline' },
   dateLbl: { color: C.soft, fontSize: 13, marginRight: 12 },
   step: { color: C.teal, fontSize: 24, fontWeight: '600', paddingHorizontal: 10, lineHeight: 26 },
   dateVal: { color: C.ink, fontSize: 15, fontWeight: '600', minWidth: 92, textAlign: 'center' },
