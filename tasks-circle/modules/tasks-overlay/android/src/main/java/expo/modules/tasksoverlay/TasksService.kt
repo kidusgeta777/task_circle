@@ -62,7 +62,8 @@ class TasksService : Service() {
 
   private var open = false
   private var draft = ""
-  private var addDayOffset = 0   // the date chosen for the next task: days from today
+  private var addDayOffset = -1  // date for the next task: -1 = no date, otherwise days from today
+  private var dateChip: TextView? = null
   private var restoreY = -1
 
   private fun px(v: Int): Int = (v * dp + 0.5f).toInt()
@@ -147,14 +148,14 @@ class TasksService : Service() {
     return g
   }
 
-  private val panelFill get() = Color.argb(238, 16, 42, 40)
+  private val panelFill get() = Color.argb(165, 0, 0, 0)
   private val outline get() = Color.argb(120, 255, 255, 255)
 
   private fun addBubble() {
     val dm = resources.displayMetrics
     val size = circleSize
     val frame = FrameLayout(this)
-    frame.background = roundBg(Color.argb(240, 31, 111, 107), 0, outline, oval = true)
+    frame.background = roundBg(Color.argb(245, 0, 0, 0), 0, outline, oval = true)
     frame.addView(IconView(this, IconView.LIST), FrameLayout.LayoutParams(px(16), px(16), Gravity.CENTER))
 
     val lp = WindowManager.LayoutParams(
@@ -214,7 +215,7 @@ class TasksService : Service() {
   private fun clampInto(lp: WindowManager.LayoutParams) {
     val dm = resources.displayMetrics
     val size = circleSize
-    val maxY = if (open) (dm.heightPixels * 0.16f).toInt() else dm.heightPixels - size
+    val maxY = dm.heightPixels - size
     lp.x = lp.x.coerceIn(0, dm.widthPixels - size)
     lp.y = lp.y.coerceIn(0, maxY.coerceAtLeast(0))
   }
@@ -233,7 +234,7 @@ class TasksService : Service() {
     clampInto(blp)
     wm.updateViewLayout(bub, blp)
 
-    val root = PanelLayout(this) { closePanel() }
+    val root = PanelLayout(this, { closePanel() }, { closePanel() })
     root.background = roundBg(panelFill, px(18), outline)
 
     // the task list (scrolls when it gets long)
@@ -277,17 +278,18 @@ class TasksService : Service() {
     }
     addRow.addView(et, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
-    // date chip: tap to move the new task's date one day forward (after 7 days it goes back to Today)
+    // date chip (optional): "+ Date" = no date. Tap: Today, Tomorrow, ... up to 7 days ahead, then back to no date
     val chip = TextView(this)
-    chip.text = TasksPrefs.dateLabel(TasksPrefs.dateOffset(addDayOffset))
+    dateChip = chip
+    refreshChip()
     chip.setTextColor(Color.WHITE)
     chip.textSize = 12f
     chip.gravity = Gravity.CENTER
     chip.setPadding(px(10), px(5), px(10), px(5))
     chip.background = roundBg(Color.argb(60, 255, 255, 255), px(12), Color.TRANSPARENT)
     chip.setOnClickListener {
-      addDayOffset = (addDayOffset + 1) % 8
-      chip.text = TasksPrefs.dateLabel(TasksPrefs.dateOffset(addDayOffset))
+      addDayOffset = if (addDayOffset >= 7) -1 else addDayOffset + 1
+      refreshChip()
     }
     val chipLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
     chipLp.rightMargin = px(4)
@@ -316,6 +318,10 @@ class TasksService : Service() {
     rebuildList()
     layoutPanel()
     wm.addView(root, lp)
+  }
+
+  private fun refreshChip() {
+    dateChip?.text = if (addDayOffset < 0) "+ Date" else TasksPrefs.dateLabel(TasksPrefs.dateOffset(addDayOffset))
   }
 
   /** Fills the list with one row per task: [-] text */
@@ -362,7 +368,8 @@ class TasksService : Service() {
       val overdue = (TasksPrefs.dayDiff(t.date) ?: 0) < 0
       val dv = TextView(this)
       dv.text = TasksPrefs.dateLabel(t.date)
-      dv.setTextColor(if (overdue) Color.rgb(255, 170, 160) else Color.argb(190, 255, 255, 255))
+      dv.setTextColor(if (overdue) Color.WHITE else Color.argb(170, 255, 255, 255))
+      if (overdue) dv.setTypeface(null, android.graphics.Typeface.BOLD)
       dv.textSize = 12f
       col.addView(dv)
     }
@@ -383,7 +390,9 @@ class TasksService : Service() {
       imm.showSoftInput(et, InputMethodManager.SHOW_IMPLICIT)
       return
     }
-    TasksPrefs.addTask(this, text, TasksPrefs.dateOffset(addDayOffset))
+    TasksPrefs.addTask(this, text, if (addDayOffset < 0) "" else TasksPrefs.dateOffset(addDayOffset))
+    addDayOffset = -1
+    refreshChip()
     et.setText("")
     draft = ""
     rebuildList()
@@ -392,21 +401,14 @@ class TasksService : Service() {
     if (sv != null && box != null) sv.post { sv.smoothScrollTo(0, box.height) }
   }
 
-  /** Panel sits beside the circle, on whichever side has more room. */
+  /** The panel always opens in the same place: centred, near the top of the screen. It does not move with the circle. */
   private fun layoutPanel() {
     val lp = panelLp ?: return
-    val blp = bubbleLp ?: return
     val dm = resources.displayMetrics
-    val size = circleSize
-    val gap = px(8)
-    val m = px(12)
-    val onLeftHalf = blp.x + size / 2 < dm.widthPixels / 2
-    val room = if (onLeftHalf) dm.widthPixels - (blp.x + size + gap) - m else blp.x - gap - m
-    val w = minOf(room, px(280)).coerceAtLeast(px(160))
-    val x = if (onLeftHalf) blp.x + size + gap else blp.x - gap - w
-    lp.x = x.coerceAtLeast(0)
+    val w = minOf(dm.widthPixels - px(24), px(320))
     lp.width = w
-    lp.y = blp.y
+    lp.x = (dm.widthPixels - w) / 2
+    lp.y = (dm.heightPixels * 0.12f).toInt()
     panel?.let { if (it.isAttachedToWindow) wm.updateViewLayout(it, lp) }
   }
 
@@ -423,6 +425,7 @@ class TasksService : Service() {
     scroll = null
     listBox = null
     input = null
+    dateChip = null
     open = false
     val blp = bubbleLp
     val bub = bubble
@@ -435,10 +438,25 @@ class TasksService : Service() {
   }
 
   // ------------------------------------------------------------------- views --
-  /** Closes the list when Back is pressed. */
-  private class PanelLayout(context: Context, private val onBack: () -> Unit) : LinearLayout(context) {
+  /** Closes the list when Back is pressed, or when the user taps outside it (the panel loses focus). */
+  private class PanelLayout(
+    context: Context,
+    private val onBack: () -> Unit,
+    private val onFocusLost: () -> Unit
+  ) : LinearLayout(context) {
+    private var hadFocus = false
+
     init {
       orientation = LinearLayout.VERTICAL
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+      super.onWindowFocusChanged(hasWindowFocus)
+      if (hasWindowFocus) {
+        hadFocus = true
+      } else if (hadFocus) {
+        post { onFocusLost() }
+      }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
