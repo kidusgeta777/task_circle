@@ -27,9 +27,9 @@ const web = {
   isEnabled: () => get('enabled', '0') === '1',
   isRunning: () => get('enabled', '0') === '1',
   getTasks: () => webTasks(),
-  addTask: (text) => {
+  addTask: (text, date) => {
     const now = Date.now();
-    set('list', JSON.stringify([...webTasks(), { id: now.toString(36) + Math.random().toString(36).slice(2, 6), text, ts: now }]));
+    set('list', JSON.stringify([...webTasks(), { id: now.toString(36) + Math.random().toString(36).slice(2, 6), text, date: date || '', ts: now }]));
   },
   deleteTask: (id) => set('list', JSON.stringify(webTasks().filter((t) => t.id !== id))),
   clearTasks: () => set('list', '[]'),
@@ -45,9 +45,9 @@ const android = {
   stop: () => safe(() => Native.stop(), undefined),
   isEnabled: () => safe(() => Native.isEnabled(), false),
   isRunning: () => safe(() => Native.isRunning(), false),
-  /** The to-do list, oldest first: [{ id, text, ts }] */
+  /** The to-do list: [{ id, text, date (yyyy-MM-dd or ""), ts }] */
   getTasks: () => safe(() => { const a = JSON.parse(Native.getTasks()); return Array.isArray(a) ? a : []; }, []),
-  addTask: (text) => safe(() => Native.addTask(text), undefined),
+  addTask: (text, date) => safe(() => Native.addTask(text, date || ''), undefined),
   deleteTask: (id) => safe(() => Native.deleteTask(id), undefined),
   clearTasks: () => safe(() => Native.clearTasks(), undefined),
 };

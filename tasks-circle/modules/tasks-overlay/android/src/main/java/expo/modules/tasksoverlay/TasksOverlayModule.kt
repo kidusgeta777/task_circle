@@ -54,8 +54,8 @@ class TasksOverlayModule : Module() {
       TasksPrefs.tasksJson(ctx)
     }
 
-    Function("addTask") { text: String ->
-      TasksPrefs.addTask(ctx, text)
+    Function("addTask") { text: String, date: String? ->
+      TasksPrefs.addTask(ctx, text, date ?: "")
     }
 
     Function("deleteTask") { id: String ->

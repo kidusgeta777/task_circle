@@ -62,10 +62,11 @@ class TasksService : Service() {
 
   private var open = false
   private var draft = ""
+  private var addDayOffset = 0   // the date chosen for the next task: days from today
   private var restoreY = -1
 
   private fun px(v: Int): Int = (v * dp + 0.5f).toInt()
-  private val circleSize: Int get() = px(48)
+  private val circleSize: Int get() = px(36)
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -154,7 +155,7 @@ class TasksService : Service() {
     val size = circleSize
     val frame = FrameLayout(this)
     frame.background = roundBg(Color.argb(240, 31, 111, 107), 0, outline, oval = true)
-    frame.addView(IconView(this, IconView.LIST), FrameLayout.LayoutParams(px(22), px(22), Gravity.CENTER))
+    frame.addView(IconView(this, IconView.LIST), FrameLayout.LayoutParams(px(16), px(16), Gravity.CENTER))
 
     val lp = WindowManager.LayoutParams(
       size, size, overlayType(),
@@ -276,8 +277,23 @@ class TasksService : Service() {
     }
     addRow.addView(et, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
+    // date chip: tap to move the new task's date one day forward (after 7 days it goes back to Today)
+    val chip = TextView(this)
+    chip.text = TasksPrefs.dateLabel(TasksPrefs.dateOffset(addDayOffset))
+    chip.setTextColor(Color.WHITE)
+    chip.textSize = 12f
+    chip.gravity = Gravity.CENTER
+    chip.setPadding(px(10), px(5), px(10), px(5))
+    chip.background = roundBg(Color.argb(60, 255, 255, 255), px(12), Color.TRANSPARENT)
+    chip.setOnClickListener {
+      addDayOffset = (addDayOffset + 1) % 8
+      chip.text = TasksPrefs.dateLabel(TasksPrefs.dateOffset(addDayOffset))
+    }
+    val chipLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+    chipLp.rightMargin = px(4)
+    addRow.addView(chip, chipLp)
+
     val plus = FrameLayout(this)
-    plus.background = roundBg(Color.argb(90, 255, 255, 255), 0, Color.argb(140, 255, 255, 255), oval = true)
     plus.addView(IconView(this, IconView.PLUS), FrameLayout.LayoutParams(px(16), px(16), Gravity.CENTER))
     plus.setOnClickListener { addFromInput() }
     addRow.addView(plus, LinearLayout.LayoutParams(px(34), px(34)))
@@ -326,7 +342,6 @@ class TasksService : Service() {
     row.setPadding(px(10), px(5), px(14), px(5))
 
     val minus = FrameLayout(this)
-    minus.background = roundBg(Color.argb(70, 255, 255, 255), 0, Color.argb(140, 255, 255, 255), oval = true)
     minus.addView(IconView(this, IconView.MINUS), FrameLayout.LayoutParams(px(14), px(14), Gravity.CENTER))
     minus.setOnClickListener {
       TasksPrefs.deleteTask(this, t.id)
@@ -334,13 +349,27 @@ class TasksService : Service() {
     }
     row.addView(minus, LinearLayout.LayoutParams(px(32), px(32)))
 
+    val col = LinearLayout(this)
+    col.orientation = LinearLayout.VERTICAL
+
     val tv = TextView(this)
     tv.text = t.text
     tv.setTextColor(Color.WHITE)
     tv.textSize = 15f
+    col.addView(tv)
+
+    if (t.date.isNotEmpty()) {
+      val overdue = (TasksPrefs.dayDiff(t.date) ?: 0) < 0
+      val dv = TextView(this)
+      dv.text = TasksPrefs.dateLabel(t.date)
+      dv.setTextColor(if (overdue) Color.rgb(255, 170, 160) else Color.argb(190, 255, 255, 255))
+      dv.textSize = 12f
+      col.addView(dv)
+    }
+
     val tlp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
     tlp.leftMargin = px(10)
-    row.addView(tv, tlp)
+    row.addView(col, tlp)
     return row
   }
 
@@ -354,7 +383,7 @@ class TasksService : Service() {
       imm.showSoftInput(et, InputMethodManager.SHOW_IMPLICIT)
       return
     }
-    TasksPrefs.addTask(this, text)
+    TasksPrefs.addTask(this, text, TasksPrefs.dateOffset(addDayOffset))
     et.setText("")
     draft = ""
     rebuildList()

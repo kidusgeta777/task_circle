@@ -10,6 +10,30 @@ const C = {
   teal: '#1f6f6b', tealDark: '#16514e', line: '#d8d8c8', red: '#a33a3a',
 };
 
+// ---- dates (day only, no time) ----
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const pad = (n) => String(n).padStart(2, '0');
+const toStr = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const todayStr = () => toStr(new Date());
+const parts = (str) => str.split('-').map(Number);
+const shiftDate = (str, n) => { const [y, m, d] = parts(str); return toStr(new Date(y, m - 1, d + n)); };
+const dayDiff = (str) => {
+  const [y, m, d] = parts(str);
+  const t = new Date();
+  return Math.round((new Date(y, m - 1, d) - new Date(t.getFullYear(), t.getMonth(), t.getDate())) / 86400000);
+};
+const dateLabel = (str) => {
+  if (!str) return '';
+  const n = dayDiff(str);
+  if (n === 0) return 'Today';
+  if (n === 1) return 'Tomorrow';
+  if (n === -1) return 'Yesterday';
+  const [y, m, d] = parts(str);
+  return d + ' ' + MONTHS[m - 1] + (y !== new Date().getFullYear() ? ' ' + y : '');
+};
+// earliest date first; tasks without a date go last
+const sortTasks = (list) => [...list].sort((a, b) => (a.date || '9999-99-99').localeCompare(b.date || '9999-99-99'));
+
 // Alert.alert does nothing in the browser, so use window.alert / confirm there.
 function ask(title, message, buttons) {
   if (Platform.OS !== 'web') { Alert.alert(title, message, buttons); return; }
@@ -23,10 +47,11 @@ function Main() {
   const [tasks, setTasks] = useState([]);
   const [on, setOn] = useState(false);
   const [text, setText] = useState('');
+  const [date, setDate] = useState(todayStr());
   const [msg, setMsg] = useState('');
   const wantOn = useRef(false);   // waiting for the overlay permission
 
-  const reload = () => setTasks(TasksOverlay.getTasks());
+  const reload = () => setTasks(sortTasks(TasksOverlay.getTasks()));
 
   const askNotifications = async () => {
     if (Platform.OS === 'android' && Platform.Version >= 33) {
@@ -60,7 +85,7 @@ function Main() {
 
   // Sync with the native side whenever the app comes back to the front.
   const refresh = useCallback(() => {
-    setTasks(TasksOverlay.getTasks());
+    setTasks(sortTasks(TasksOverlay.getTasks()));
     if (wantOn.current && TasksOverlay.canDrawOverlays()) {
       wantOn.current = false;
       turnOn();
@@ -80,7 +105,7 @@ function Main() {
   const addTask = () => {
     const t = text.trim();
     if (!t) return;
-    TasksOverlay.addTask(t);
+    TasksOverlay.addTask(t, date);
     setText('');
     reload();
   };
@@ -105,7 +130,7 @@ function Main() {
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <Text style={s.eyebrow}>TASKS</Text>
         <Text style={s.title}>Things to do.</Text>
-        <Text style={s.sub}>Turn on the circle, then tap it from any app to see your list. Tap + to add a task and − to remove one.</Text>
+        <Text style={s.sub}>Turn on the circle, then tap it from any app to see your list. Pick a date, tap + to add a task and − to remove one.</Text>
 
         <View style={s.circleRow}>
           <View style={{ flex: 1, paddingRight: 12 }}>
@@ -124,10 +149,13 @@ function Main() {
         <View style={s.list}>
           {tasks.length === 0 ? <Text style={s.empty}>No tasks yet</Text> : tasks.map((t) => (
             <View key={t.id} style={s.task}>
-              <Pressable onPress={() => removeTask(t.id)} style={s.round} hitSlop={8}>
+              <Pressable onPress={() => removeTask(t.id)} style={[s.round, s.minusBtn]} hitSlop={8}>
                 <View style={s.minus} />
               </Pressable>
-              <Text style={s.taskText}>{t.text}</Text>
+              <View style={s.taskCol}>
+                <Text style={s.taskText}>{t.text}</Text>
+                {t.date ? <Text style={[s.taskDate, dayDiff(t.date) < 0 && { color: C.red }]}>{dateLabel(t.date)}</Text> : null}
+              </View>
             </View>
           ))}
           <View style={[s.task, s.addRow]}>
@@ -144,6 +172,12 @@ function Main() {
               <View style={s.minus} />
               <View style={[s.minus, s.plusV]} />
             </Pressable>
+          </View>
+          <View style={s.dateRow}>
+            <Text style={s.dateLbl}>Date</Text>
+            <Pressable onPress={() => setDate(shiftDate(date, -1))} hitSlop={10}><Text style={s.step}>‹</Text></Pressable>
+            <Pressable onPress={() => setDate(todayStr())} hitSlop={6}><Text style={s.dateVal}>{dateLabel(date)}</Text></Pressable>
+            <Pressable onPress={() => setDate(shiftDate(date, 1))} hitSlop={10}><Text style={s.step}>›</Text></Pressable>
           </View>
         </View>
       </ScrollView>
@@ -167,14 +201,21 @@ const s = StyleSheet.create({
   list: { backgroundColor: C.card, borderColor: C.line, borderWidth: 1, borderRadius: 4, paddingVertical: 6 },
   empty: { color: C.soft, fontStyle: 'italic', padding: 14 },
   task: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8 },
-  taskText: { flex: 1, color: C.ink, fontSize: 16, marginLeft: 12 },
+  taskCol: { flex: 1, marginLeft: 12 },
+  taskText: { color: C.ink, fontSize: 16 },
+  taskDate: { color: C.soft, fontSize: 12.5, marginTop: 1 },
   round: {
     width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, borderColor: C.teal,
     alignItems: 'center', justifyContent: 'center',
   },
   minus: { position: 'absolute', width: 12, height: 2, borderRadius: 1, backgroundColor: C.teal },
   plusV: { width: 2, height: 12 },
-  plusBtn: { backgroundColor: 'rgba(31,111,107,0.08)' },
+  minusBtn: { borderWidth: 0, backgroundColor: 'transparent' },
+  plusBtn: { borderWidth: 0, backgroundColor: 'transparent' },
+  dateRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingBottom: 8 },
+  dateLbl: { color: C.soft, fontSize: 13, marginRight: 12 },
+  step: { color: C.teal, fontSize: 24, fontWeight: '600', paddingHorizontal: 10, lineHeight: 26 },
+  dateVal: { color: C.ink, fontSize: 15, fontWeight: '600', minWidth: 92, textAlign: 'center' },
   addRow: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 4, paddingTop: 10 },
   input: { flex: 1, fontSize: 16, color: C.ink, paddingVertical: 6, paddingRight: 10 },
 });
