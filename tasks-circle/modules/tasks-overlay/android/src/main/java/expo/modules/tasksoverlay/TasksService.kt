@@ -62,6 +62,8 @@ class TasksService : Service() {
 
   private var open = false
   private var draft = ""
+  private val MAX_SHOWN = 3
+  private val AUTO_CLOSE_MS = 6000L   // popup collapses after 6 seconds without touching it or typing
   private var addDayOffset = -1  // date for the next task: -1 = no date, otherwise days from today
   private var dateChip: TextView? = null
   private var restoreY = -1
@@ -211,7 +213,7 @@ class TasksService : Service() {
     bubbleLp = lp
   }
 
-  /** Keep the circle on screen; while the list is open keep it high so the keyboard never covers it. */
+  /** Keep the circle on screen. */
   private fun clampInto(lp: WindowManager.LayoutParams) {
     val dm = resources.displayMetrics
     val size = circleSize
@@ -234,7 +236,7 @@ class TasksService : Service() {
     clampInto(blp)
     wm.updateViewLayout(bub, blp)
 
-    val root = PanelLayout(this, { closePanel() }, { closePanel() })
+    val root = PanelLayout(this, { closePanel() }, { closePanel() }, { scheduleAutoClose() })
     root.background = roundBg(panelFill, px(18), outline)
 
     // the task list (scrolls when it gets long)
@@ -304,7 +306,7 @@ class TasksService : Service() {
 
     val lp = WindowManager.LayoutParams(
       px(260), WindowManager.LayoutParams.WRAP_CONTENT, overlayType(),
-      WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+      WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
       PixelFormat.TRANSLUCENT
     )
     lp.gravity = Gravity.TOP or Gravity.START
@@ -318,6 +320,26 @@ class TasksService : Service() {
     rebuildList()
     layoutPanel()
     wm.addView(root, lp)
+    scheduleAutoClose()
+    // once the panel has a real height (and whenever the list grows or shrinks), keep it on screen
+    var lastH = 0
+    root.viewTreeObserver.addOnGlobalLayoutListener {
+      if (root.height != lastH) {
+        lastH = root.height
+        layoutPanel()
+      }
+    }
+  }
+
+  // ---- auto-collapse: closes by itself when nobody is typing in it ----
+  private val autoClose = Runnable {
+    if (input?.hasFocus() == true) scheduleAutoClose()   // still typing: keep it open
+    else closePanel()
+  }
+
+  private fun scheduleAutoClose() {
+    main.removeCallbacks(autoClose)
+    if (open) main.postDelayed(autoClose, AUTO_CLOSE_MS)
   }
 
   private fun refreshChip() {
@@ -328,16 +350,27 @@ class TasksService : Service() {
   private fun rebuildList() {
     val box = listBox ?: return
     box.removeAllViews()
-    val tasks = TasksPrefs.tasks(this)
+    // the popup shows tasks with no date, plus tasks due today or overdue; future-dated ones appear on their day
+    val today = TasksPrefs.dateOffset(0)
+    val tasks = TasksPrefs.tasks(this).filter { it.date.isEmpty() || it.date <= today }
     if (tasks.isEmpty()) {
       val empty = TextView(this)
-      empty.text = "No tasks yet"
+      empty.text = "No tasks for today"
       empty.setTextColor(Color.argb(170, 255, 255, 255))
       empty.textSize = 14f
       empty.setPadding(px(16), px(14), px(16), px(12))
       box.addView(empty)
     } else {
-      for (t in tasks) box.addView(taskRow(t))
+      // the popup shows only the first 3 tasks (earliest date first); the rest are in the app
+      for (t in tasks.take(MAX_SHOWN)) box.addView(taskRow(t))
+      if (tasks.size > MAX_SHOWN) {
+        val more = TextView(this)
+        more.text = "+" + (tasks.size - MAX_SHOWN) + " more in the app"
+        more.setTextColor(Color.argb(150, 255, 255, 255))
+        more.textSize = 12f
+        more.setPadding(px(16), px(4), px(16), px(8))
+        box.addView(more)
+      }
     }
   }
 
@@ -401,18 +434,28 @@ class TasksService : Service() {
     if (sv != null && box != null) sv.post { sv.smoothScrollTo(0, box.height) }
   }
 
-  /** The panel always opens in the same place: centred, near the top of the screen. It does not move with the circle. */
+  /**
+   * The panel sits right beside the circle, on the side with more room, with its top level with the top of the
+   * circle. It follows the circle when the circle is moved.
+   */
   private fun layoutPanel() {
     val lp = panelLp ?: return
+    val blp = bubbleLp ?: return
     val dm = resources.displayMetrics
-    val w = minOf(dm.widthPixels - px(24), px(320))
+    val gap = px(8)
+    val w = minOf(px(280), dm.widthPixels - circleSize - gap - px(8))
     lp.width = w
-    lp.x = (dm.widthPixels - w) / 2
-    lp.y = (dm.heightPixels * 0.12f).toInt()
+    val circleOnRight = blp.x + circleSize / 2 > dm.widthPixels / 2
+    lp.x = if (circleOnRight) blp.x - gap - w else blp.x + circleSize + gap
+    lp.x = lp.x.coerceIn(0, (dm.widthPixels - w).coerceAtLeast(0))
+    lp.y = blp.y   // top of the panel level with the top of the circle
+    val h = panel?.height ?: 0
+    if (h > 0 && lp.y + h > dm.heightPixels) lp.y = (dm.heightPixels - h).coerceAtLeast(0)  // only if it would run off the bottom
     panel?.let { if (it.isAttachedToWindow) wm.updateViewLayout(it, lp) }
   }
 
   private fun closePanel() {
+    main.removeCallbacks(autoClose)
     val p = panel ?: return
     draft = input?.text?.toString() ?: ""
     runCatching {
@@ -442,7 +485,8 @@ class TasksService : Service() {
   private class PanelLayout(
     context: Context,
     private val onBack: () -> Unit,
-    private val onFocusLost: () -> Unit
+    private val onFocusLost: () -> Unit,
+    private val onActivity: () -> Unit
   ) : LinearLayout(context) {
     private var hadFocus = false
 
@@ -457,6 +501,15 @@ class TasksService : Service() {
       } else if (hadFocus) {
         post { onFocusLost() }
       }
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+      if (ev.action == MotionEvent.ACTION_OUTSIDE) {
+        post { onFocusLost() }   // a tap anywhere outside the popup closes it
+        return true
+      }
+      onActivity()               // any touch inside keeps it open a bit longer
+      return super.dispatchTouchEvent(ev)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
