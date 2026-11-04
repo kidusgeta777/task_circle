@@ -32,6 +32,14 @@ const web = {
     set('list', JSON.stringify([...webTasks(), { id: now.toString(36) + Math.random().toString(36).slice(2, 6), text, date: date || '', ts: now }]));
   },
   deleteTask: (id) => set('list', JSON.stringify(webTasks().filter((t) => t.id !== id))),
+  swapTasks: (a, b) => {
+    const l = webTasks();
+    const i = l.findIndex((t) => t.id === a);
+    const j = l.findIndex((t) => t.id === b);
+    if (i < 0 || j < 0) return;
+    [l[i], l[j]] = [l[j], l[i]];
+    set('list', JSON.stringify(l));
+  },
   clearTasks: () => set('list', '[]'),
 };
 
@@ -49,6 +57,8 @@ const android = {
   getTasks: () => safe(() => { const a = JSON.parse(Native.getTasks()); return Array.isArray(a) ? a : []; }, []),
   addTask: (text, date) => safe(() => Native.addTask(text, date || ''), undefined),
   deleteTask: (id) => safe(() => Native.deleteTask(id), undefined),
+  /** Swaps the positions of two tasks (used to move a task up or down). */
+  swapTasks: (a, b) => safe(() => Native.swapTasks(a, b), undefined),
   clearTasks: () => safe(() => Native.clearTasks(), undefined),
 };
 
