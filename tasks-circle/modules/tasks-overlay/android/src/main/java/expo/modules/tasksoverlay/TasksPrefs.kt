@@ -26,8 +26,8 @@ object TasksPrefs {
       val o = arr.optJSONObject(i) ?: continue
       out.add(Task(o.optString("id"), o.optString("text"), o.optString("date")))
     }
-    // earliest date first; tasks without a date go last (the sort keeps the original order for ties)
-    return out.sortedWith(compareBy { if (it.date.isEmpty()) "9999-99-99" else it.date })
+    // the order is the user's own: they move tasks up and down to prioritise them
+    return out
   }
 
   // ---- dates (day only, no time) ----
@@ -37,6 +37,13 @@ object TasksPrefs {
   fun dateOffset(days: Int): String {
     val cal = java.util.Calendar.getInstance()
     cal.add(java.util.Calendar.DAY_OF_YEAR, days)
+    return fmt().format(cal.time)
+  }
+
+  /** The last date that can be picked: 3 months from today (Calendar clamps e.g. 31 Nov to the month's end). */
+  fun maxDate(): String {
+    val cal = java.util.Calendar.getInstance()
+    cal.add(java.util.Calendar.MONTH, 3)
     return fmt().format(cal.time)
   }
 
@@ -91,6 +98,24 @@ object TasksPrefs {
       if (o.optString("id") != id) out.put(o)
     }
     sp(c).edit().putString("tasks", out.toString()).commit()
+  }
+
+  /** Swaps the positions of two tasks in the list. */
+  @Synchronized
+  fun swapTasks(c: Context, idA: String, idB: String) {
+    val arr = readArray(c)
+    var ia = -1
+    var ib = -1
+    for (i in 0 until arr.length()) {
+      val id = arr.optJSONObject(i)?.optString("id")
+      if (id == idA) ia = i else if (id == idB) ib = i
+    }
+    if (ia < 0 || ib < 0 || ia == ib) return
+    val a = arr.get(ia)
+    val b = arr.get(ib)
+    arr.put(ia, b)
+    arr.put(ib, a)
+    sp(c).edit().putString("tasks", arr.toString()).commit()
   }
 
   @Synchronized
