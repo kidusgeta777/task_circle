@@ -31,8 +31,15 @@ const dateLabel = (str) => {
   const [y, m, d] = parts(str);
   return d + ' ' + MONTHS[m - 1] + (y !== new Date().getFullYear() ? ' ' + y : '');
 };
-// earliest date first; tasks without a date go last
-const sortTasks = (list) => [...list].sort((a, b) => (a.date || '9999-99-99').localeCompare(b.date || '9999-99-99'));
+// Dates can be picked from today up to 3 months ahead.
+const MAX_MONTHS = 3;
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const maxDateStr = () => {
+  const t = new Date();
+  const last = new Date(t.getFullYear(), t.getMonth() + MAX_MONTHS + 1, 0).getDate();
+  return toStr(new Date(t.getFullYear(), t.getMonth() + MAX_MONTHS, Math.min(t.getDate(), last)));
+};
 
 // Alert.alert does nothing in the browser, so use window.alert / confirm there.
 function ask(title, message, buttons) {
@@ -43,15 +50,65 @@ function ask(title, message, buttons) {
   else window.alert(text);
 }
 
+// Month calendar: today up to 3 months ahead can be picked, everything else is greyed out.
+function Calendar({ value, onPick }) {
+  const t = new Date();
+  const today = todayStr();
+  const max = maxDateStr();
+  const startOff = () => {
+    if (!value) return 0;
+    const [y, m] = parts(value);
+    return Math.min(MAX_MONTHS, Math.max(0, (y - t.getFullYear()) * 12 + (m - 1 - t.getMonth())));
+  };
+  const [off, setOff] = useState(startOff);
+  const first = new Date(t.getFullYear(), t.getMonth() + off, 1);
+  const y = first.getFullYear();
+  const m = first.getMonth();
+  const days = new Date(y, m + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < first.getDay(); i++) cells.push(null);
+  for (let d = 1; d <= days; d++) cells.push(toStr(new Date(y, m, d)));
+  while (cells.length % 7) cells.push(null);
+  const rows = [];
+  for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
+  return (
+    <View style={s.cal}>
+      <View style={s.calHead}>
+        <Pressable disabled={off <= 0} onPress={() => setOff(off - 1)} hitSlop={8}><Text style={[s.step, off <= 0 && s.dim]}>‹</Text></Pressable>
+        <Text style={s.calTitle}>{MONTH_NAMES[m]} {y}</Text>
+        <Pressable disabled={off >= MAX_MONTHS} onPress={() => setOff(off + 1)} hitSlop={8}><Text style={[s.step, off >= MAX_MONTHS && s.dim]}>›</Text></Pressable>
+      </View>
+      <View style={s.calRow}>{DOW.map((l, i) => <Text key={i} style={s.calDow}>{l}</Text>)}</View>
+      {rows.map((r, ri) => (
+        <View key={ri} style={s.calRow}>
+          {r.map((ds, ci) => {
+            if (!ds) return <View key={ci} style={s.calCell} />;
+            const ok = ds >= today && ds <= max;
+            const sel = ds === value;
+            return (
+              <Pressable key={ci} disabled={!ok} onPress={() => onPick(ds)} style={s.calCell}>
+                <View style={[s.calDay, sel && s.calSel, ds === today && !sel && s.calToday]}>
+                  <Text style={[s.calNum, !ok && s.dim, sel && { color: C.paper }]}>{Number(ds.slice(8))}</Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function Main() {
   const [tasks, setTasks] = useState([]);
   const [on, setOn] = useState(false);
   const [text, setText] = useState('');
   const [date, setDate] = useState('');   // optional: empty = this task has no date
   const [msg, setMsg] = useState('');
+  const [showCal, setShowCal] = useState(false);
   const wantOn = useRef(false);   // waiting for the overlay permission
 
-  const reload = () => setTasks(sortTasks(TasksOverlay.getTasks()));
+  const reload = () => setTasks(TasksOverlay.getTasks());
 
   const askNotifications = async () => {
     if (Platform.OS === 'android' && Platform.Version >= 33) {
@@ -85,7 +142,7 @@ function Main() {
 
   // Sync with the native side whenever the app comes back to the front.
   const refresh = useCallback(() => {
-    setTasks(sortTasks(TasksOverlay.getTasks()));
+    setTasks(TasksOverlay.getTasks());
     if (wantOn.current && TasksOverlay.canDrawOverlays()) {
       wantOn.current = false;
       turnOn();
@@ -108,10 +165,19 @@ function Main() {
     TasksOverlay.addTask(t, date);
     setText('');
     setDate('');
+    setShowCal(false);
     reload();
   };
 
   const removeTask = (id) => { TasksOverlay.deleteTask(id); reload(); };
+
+  // swap a task with its neighbour (dir -1 = up, +1 = down)
+  const moveTask = (i, dir) => {
+    const other = tasks[i + dir];
+    if (!other) return;
+    TasksOverlay.swapTasks(tasks[i].id, other.id);
+    reload();
+  };
 
   if (!TasksOverlay.supported) {
     return (
@@ -131,7 +197,7 @@ function Main() {
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <Text style={s.eyebrow}>TASKS</Text>
         <Text style={s.title}>Things to do.</Text>
-        <Text style={s.sub}>Turn on the circle, then tap it from any app to see your list. Tap + to add a task (a date is optional) and − to remove one.</Text>
+        <Text style={s.sub}>Turn on the circle, then tap it from any app to see your list. Tap + to add a task (a date up to 3 months ahead is optional), − to remove one, and ▲ ▼ to move important tasks to the top.</Text>
 
         <View style={s.circleRow}>
           <View style={{ flex: 1, paddingRight: 12 }}>
@@ -148,7 +214,7 @@ function Main() {
         {msg ? <Text selectable style={[s.small, { color: C.red, marginBottom: 10 }]}>{msg}</Text> : null}
 
         <View style={s.list}>
-          {tasks.length === 0 ? <Text style={s.empty}>No tasks yet</Text> : tasks.map((t) => (
+          {tasks.length === 0 ? <Text style={s.empty}>No tasks yet</Text> : tasks.map((t, i) => (
             <View key={t.id} style={s.task}>
               <Pressable onPress={() => removeTask(t.id)} style={[s.round, s.minusBtn]} hitSlop={8}>
                 <View style={s.minus} />
@@ -156,6 +222,10 @@ function Main() {
               <View style={s.taskCol}>
                 <Text style={s.taskText}>{t.text}</Text>
                 {t.date ? <Text style={[s.taskDate, dayDiff(t.date) < 0 && { color: C.ink, fontWeight: '700' }]}>{dateLabel(t.date)}</Text> : null}
+              </View>
+              <View style={s.arrows}>
+                <Pressable disabled={i === 0} onPress={() => moveTask(i, -1)} hitSlop={6} style={[s.arrow, i === 0 && s.dim]}><Text style={s.arrowTxt}>▲</Text></Pressable>
+                <Pressable disabled={i === tasks.length - 1} onPress={() => moveTask(i, 1)} hitSlop={6} style={[s.arrow, i === tasks.length - 1 && s.dim]}><Text style={s.arrowTxt}>▼</Text></Pressable>
               </View>
             </View>
           ))}
@@ -174,19 +244,18 @@ function Main() {
               <View style={[s.minus, s.plusV]} />
             </Pressable>
           </View>
-          {date ? (
-            <View style={s.dateRow}>
-              <Text style={s.dateLbl}>Date</Text>
-              <Pressable onPress={() => setDate(shiftDate(date, -1))} hitSlop={10}><Text style={s.step}>‹</Text></Pressable>
-              <Pressable onPress={() => setDate(todayStr())} hitSlop={6}><Text style={s.dateVal}>{dateLabel(date)}</Text></Pressable>
-              <Pressable onPress={() => setDate(shiftDate(date, 1))} hitSlop={10}><Text style={s.step}>›</Text></Pressable>
-              <Pressable onPress={() => setDate('')} hitSlop={8}><Text style={s.clear}>Clear</Text></Pressable>
-            </View>
-          ) : (
-            <View style={s.dateRow}>
-              <Pressable onPress={() => setDate(todayStr())} hitSlop={8}><Text style={s.addDate}>+ Add a date (optional)</Text></Pressable>
-            </View>
-          )}
+          <View style={s.dateRow}>
+            {date ? (
+              <>
+                <Text style={s.dateLbl}>Date</Text>
+                <Pressable onPress={() => setShowCal(!showCal)} hitSlop={8}><Text style={s.dateVal}>{dateLabel(date)} ▾</Text></Pressable>
+                <Pressable onPress={() => { setDate(''); setShowCal(false); }} hitSlop={8}><Text style={s.clear}>Clear</Text></Pressable>
+              </>
+            ) : (
+              <Pressable onPress={() => setShowCal(!showCal)} hitSlop={8}><Text style={s.addDate}>+ Add a date (optional, up to 3 months ahead)</Text></Pressable>
+            )}
+          </View>
+          {showCal ? <Calendar value={date} onPick={(d) => { setDate(d); setShowCal(false); }} /> : null}
         </View>
       </ScrollView>
     </View>
@@ -226,6 +295,20 @@ const s = StyleSheet.create({
   dateLbl: { color: C.soft, fontSize: 13, marginRight: 12 },
   step: { color: C.teal, fontSize: 24, fontWeight: '600', paddingHorizontal: 10, lineHeight: 26 },
   dateVal: { color: C.ink, fontSize: 15, fontWeight: '600', minWidth: 92, textAlign: 'center' },
+  arrows: { flexDirection: 'row', alignItems: 'center' },
+  arrow: { paddingHorizontal: 9, paddingVertical: 6 },
+  arrowTxt: { color: C.soft, fontSize: 14 },
+  dim: { opacity: 0.3 },
+  cal: { paddingHorizontal: 10, paddingBottom: 8 },
+  calHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  calTitle: { color: C.ink, fontSize: 15, fontWeight: '600' },
+  calRow: { flexDirection: 'row' },
+  calDow: { flex: 1, textAlign: 'center', color: C.hint, fontSize: 12, paddingVertical: 4 },
+  calCell: { flex: 1, height: 38, alignItems: 'center', justifyContent: 'center' },
+  calDay: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  calSel: { backgroundColor: C.ink },
+  calToday: { borderWidth: 1, borderColor: C.ink },
+  calNum: { color: C.ink, fontSize: 14 },
   addRow: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 4, paddingTop: 10 },
   input: { flex: 1, fontSize: 16, color: C.ink, paddingVertical: 6, paddingRight: 10 },
 });
