@@ -62,6 +62,10 @@ class TasksOverlayModule : Module() {
       TasksPrefs.deleteTask(ctx, id)
     }
 
+    Function("swapTasks") { a: String, b: String ->
+      TasksPrefs.swapTasks(ctx, a, b)
+    }
+
     Function("clearTasks") {
       TasksPrefs.clearTasks(ctx)
     }
