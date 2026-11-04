@@ -31,6 +31,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import java.util.Calendar
+import java.util.Locale
 
 /**
  * The floating circle. Collapsed it is a small draggable circle. Tapping it opens the to-do list:
@@ -64,8 +66,11 @@ class TasksService : Service() {
   private var draft = ""
   private val MAX_SHOWN = 3
   private val AUTO_CLOSE_MS = 6000L   // popup collapses after 6 seconds without touching it or typing
-  private var addDayOffset = -1  // date for the next task: -1 = no date, otherwise days from today
+  private var addDate = ""     // date for the next task as yyyy-MM-dd, "" = no date
   private var dateChip: TextView? = null
+  private var calBox: LinearLayout? = null   // the month calendar (today up to 3 months ahead)
+  private var calOpen = false
+  private var calMonth = 0       // 0 = this month ... 3 = three months ahead
   private var restoreY = -1
 
   private fun px(v: Int): Int = (v * dp + 0.5f).toInt()
@@ -252,6 +257,14 @@ class TasksService : Service() {
     divider.setBackgroundColor(Color.argb(70, 255, 255, 255))
     root.addView(divider, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px(1)))
 
+    // the calendar (hidden until the date chip is tapped)
+    val cal = LinearLayout(this)
+    cal.orientation = LinearLayout.VERTICAL
+    cal.visibility = View.GONE
+    root.addView(cal, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+    calBox = cal
+    calOpen = false
+
     // the add row: [ Add a task…            (+) ]
     val addRow = LinearLayout(this)
     addRow.orientation = LinearLayout.HORIZONTAL
@@ -280,7 +293,7 @@ class TasksService : Service() {
     }
     addRow.addView(et, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
-    // date chip (optional): "+ Date" = no date. Tap: Today, Tomorrow, ... up to 7 days ahead, then back to no date
+    // date chip (optional): "+ Date" = no date. Tap it to open a calendar: any day from today up to 3 months ahead
     val chip = TextView(this)
     dateChip = chip
     refreshChip()
@@ -289,10 +302,7 @@ class TasksService : Service() {
     chip.gravity = Gravity.CENTER
     chip.setPadding(px(10), px(5), px(10), px(5))
     chip.background = roundBg(Color.argb(60, 255, 255, 255), px(12), Color.TRANSPARENT)
-    chip.setOnClickListener {
-      addDayOffset = if (addDayOffset >= 7) -1 else addDayOffset + 1
-      refreshChip()
-    }
+    chip.setOnClickListener { toggleCalendar() }
     val chipLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
     chipLp.rightMargin = px(4)
     addRow.addView(chip, chipLp)
@@ -333,7 +343,7 @@ class TasksService : Service() {
 
   // ---- auto-collapse: closes by itself when nobody is typing in it ----
   private val autoClose = Runnable {
-    if (input?.hasFocus() == true) scheduleAutoClose()   // still typing: keep it open
+    if (input?.hasFocus() == true || calOpen) scheduleAutoClose()   // still typing or picking a date: keep it open
     else closePanel()
   }
 
@@ -343,7 +353,127 @@ class TasksService : Service() {
   }
 
   private fun refreshChip() {
-    dateChip?.text = if (addDayOffset < 0) "+ Date" else TasksPrefs.dateLabel(TasksPrefs.dateOffset(addDayOffset))
+    dateChip?.text = if (addDate.isEmpty()) "+ Date" else TasksPrefs.dateLabel(addDate)
+  }
+
+  private fun hideCalendar() {
+    calOpen = false
+    calBox?.visibility = View.GONE
+  }
+
+  private fun toggleCalendar() {
+    val box = calBox ?: return
+    if (calOpen) {
+      hideCalendar()
+      return
+    }
+    panel?.let { p ->
+      runCatching {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(p.windowToken, 0)   // make room for the calendar
+      }
+    }
+    calMonth = runCatching {
+      val now = Calendar.getInstance()
+      val y = addDate.substring(0, 4).toInt()
+      val m = addDate.substring(5, 7).toInt() - 1
+      ((y - now.get(Calendar.YEAR)) * 12 + m - now.get(Calendar.MONTH)).coerceIn(0, 3)
+    }.getOrDefault(0)
+    calOpen = true
+    buildCalendar()
+    box.visibility = View.VISIBLE
+  }
+
+  private fun calText(text: String, size: Float, alpha: Int = 255): TextView {
+    val tv = TextView(this)
+    tv.text = text
+    tv.textSize = size
+    tv.gravity = Gravity.CENTER
+    tv.setTextColor(Color.argb(alpha, 255, 255, 255))
+    return tv
+  }
+
+  /** Draws the month calendar. Only today up to 3 months ahead can be picked. */
+  private fun buildCalendar() {
+    val box = calBox ?: return
+    box.removeAllViews()
+    box.setPadding(px(10), px(6), px(10), px(4))
+    val today = TasksPrefs.dateOffset(0)
+    val max = TasksPrefs.maxDate()
+    val first = Calendar.getInstance()
+    first.set(Calendar.DAY_OF_MONTH, 1)
+    first.add(Calendar.MONTH, calMonth)
+    val year = first.get(Calendar.YEAR)
+    val month = first.get(Calendar.MONTH)
+
+    // header: [<]  November 2026  [>]  Clear
+    val head = LinearLayout(this)
+    head.orientation = LinearLayout.HORIZONTAL
+    head.gravity = Gravity.CENTER_VERTICAL
+    val prev = calText("‹", 22f, if (calMonth > 0) 255 else 60)
+    prev.setPadding(px(10), 0, px(10), 0)
+    if (calMonth > 0) prev.setOnClickListener { calMonth--; buildCalendar() }
+    val next = calText("›", 22f, if (calMonth < 3) 255 else 60)
+    next.setPadding(px(10), 0, px(10), 0)
+    if (calMonth < 3) next.setOnClickListener { calMonth++; buildCalendar() }
+    val title = calText(java.text.SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(first.time), 14f)
+    title.setTypeface(null, android.graphics.Typeface.BOLD)
+    val clear = calText("Clear", 12f, 190)
+    clear.setPadding(px(8), px(4), px(4), px(4))
+    clear.setOnClickListener {
+      addDate = ""
+      refreshChip()
+      hideCalendar()
+    }
+    head.addView(prev, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, px(32)))
+    head.addView(title, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+    head.addView(next, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, px(32)))
+    head.addView(clear, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, px(32)))
+    box.addView(head, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
+    // weekday letters (Sunday first)
+    val dow = LinearLayout(this)
+    dow.orientation = LinearLayout.HORIZONTAL
+    for (l in arrayOf("S", "M", "T", "W", "T", "F", "S")) {
+      dow.addView(calText(l, 11f, 150), LinearLayout.LayoutParams(0, px(22), 1f))
+    }
+    box.addView(dow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
+    // the days
+    val lead = first.get(Calendar.DAY_OF_WEEK) - 1
+    val days = first.getActualMaximum(Calendar.DAY_OF_MONTH)
+    val rows = (lead + days + 6) / 7
+    var day = 1 - lead
+    for (r in 0 until rows) {
+      val row = LinearLayout(this)
+      row.orientation = LinearLayout.HORIZONTAL
+      for (c in 0 until 7) {
+        val cellBox = FrameLayout(this)
+        if (day in 1..days) {
+          val ds = String.format(Locale.US, "%04d-%02d-%02d", year, month + 1, day)
+          val ok = ds >= today && ds <= max
+          val sel = ds == addDate
+          val tv = calText(day.toString(), 13f, if (ok) 255 else 70)
+          if (sel) {
+            tv.setTextColor(Color.BLACK)
+            tv.background = roundBg(Color.WHITE, 0, Color.TRANSPARENT, oval = true)
+          } else if (ds == today) {
+            tv.background = roundBg(Color.TRANSPARENT, 0, outline, oval = true)
+          }
+          cellBox.addView(tv, FrameLayout.LayoutParams(px(30), px(30), Gravity.CENTER))
+          if (ok) {
+            cellBox.setOnClickListener {
+              addDate = ds
+              refreshChip()
+              hideCalendar()
+            }
+          }
+        }
+        day++
+        row.addView(cellBox, LinearLayout.LayoutParams(0, px(32), 1f))
+      }
+      box.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+    }
   }
 
   /** Fills the list with one row per task: [-] text */
@@ -361,8 +491,10 @@ class TasksService : Service() {
       empty.setPadding(px(16), px(14), px(16), px(12))
       box.addView(empty)
     } else {
-      // the popup shows only the first 3 tasks (earliest date first); the rest are in the app
-      for (t in tasks.take(MAX_SHOWN)) box.addView(taskRow(t))
+      // the popup shows only the first 3 tasks, in the user's own order (move important ones up); the rest are in the app
+      tasks.take(MAX_SHOWN).forEachIndexed { i, t ->
+        box.addView(taskRow(t, tasks.getOrNull(i - 1), tasks.getOrNull(i + 1)))
+      }
       if (tasks.size > MAX_SHOWN) {
         val more = TextView(this)
         more.text = "+" + (tasks.size - MAX_SHOWN) + " more in the app"
@@ -374,7 +506,7 @@ class TasksService : Service() {
     }
   }
 
-  private fun taskRow(t: Task): View {
+  private fun taskRow(t: Task, prev: Task?, next: Task?): View {
     val row = LinearLayout(this)
     row.orientation = LinearLayout.HORIZONTAL
     row.gravity = Gravity.CENTER_VERTICAL
@@ -410,7 +542,21 @@ class TasksService : Service() {
     val tlp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
     tlp.leftMargin = px(10)
     row.addView(col, tlp)
+
+    // move up / down (swaps with the neighbouring task in the list)
+    row.addView(arrowBtn(IconView.UP, prev) { TasksPrefs.swapTasks(this, t.id, it.id); rebuildList() }, LinearLayout.LayoutParams(px(30), px(32)))
+    row.addView(arrowBtn(IconView.DOWN, next) { TasksPrefs.swapTasks(this, t.id, it.id); rebuildList() }, LinearLayout.LayoutParams(px(30), px(32)))
     return row
+  }
+
+  /** An up/down arrow; empty (but still taking space, so rows line up) when there is no neighbour to swap with. */
+  private fun arrowBtn(kind: Int, other: Task?, onTap: (Task) -> Unit): View {
+    val f = FrameLayout(this)
+    if (other != null) {
+      f.addView(IconView(this, kind), FrameLayout.LayoutParams(px(14), px(14), Gravity.CENTER))
+      f.setOnClickListener { onTap(other) }
+    }
+    return f
   }
 
   private fun addFromInput() {
@@ -423,9 +569,10 @@ class TasksService : Service() {
       imm.showSoftInput(et, InputMethodManager.SHOW_IMPLICIT)
       return
     }
-    TasksPrefs.addTask(this, text, if (addDayOffset < 0) "" else TasksPrefs.dateOffset(addDayOffset))
-    addDayOffset = -1
+    TasksPrefs.addTask(this, text, addDate)
+    addDate = ""
     refreshChip()
+    hideCalendar()
     et.setText("")
     draft = ""
     rebuildList()
@@ -469,6 +616,8 @@ class TasksService : Service() {
     listBox = null
     input = null
     dateChip = null
+    calBox = null
+    calOpen = false
     open = false
     val blp = bubbleLp
     val bub = bubble
@@ -534,6 +683,8 @@ class TasksService : Service() {
       const val LIST = 0
       const val PLUS = 1
       const val MINUS = 2
+      const val UP = 3
+      const val DOWN = 4
     }
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -546,17 +697,27 @@ class TasksService : Service() {
     override fun onDraw(canvas: Canvas) {
       val s = width / 24f
       paint.strokeWidth = 2.2f * s
-      if (kind == LIST) {
-        val ys = floatArrayOf(6f, 12f, 18f)
-        for (y in ys) {
-          canvas.drawPoint(4 * s, y * s, paint)
-          canvas.drawLine(9 * s, y * s, 21 * s, y * s, paint)
+      when (kind) {
+        LIST -> {
+          val ys = floatArrayOf(6f, 12f, 18f)
+          for (y in ys) {
+            canvas.drawPoint(4 * s, y * s, paint)
+            canvas.drawLine(9 * s, y * s, 21 * s, y * s, paint)
+          }
         }
-      } else if (kind == PLUS) {
-        canvas.drawLine(12 * s, 5 * s, 12 * s, 19 * s, paint)
-        canvas.drawLine(5 * s, 12 * s, 19 * s, 12 * s, paint)
-      } else {
-        canvas.drawLine(5 * s, 12 * s, 19 * s, 12 * s, paint)
+        PLUS -> {
+          canvas.drawLine(12 * s, 5 * s, 12 * s, 19 * s, paint)
+          canvas.drawLine(5 * s, 12 * s, 19 * s, 12 * s, paint)
+        }
+        UP -> {
+          canvas.drawLine(5 * s, 15 * s, 12 * s, 8 * s, paint)
+          canvas.drawLine(12 * s, 8 * s, 19 * s, 15 * s, paint)
+        }
+        DOWN -> {
+          canvas.drawLine(5 * s, 9 * s, 12 * s, 16 * s, paint)
+          canvas.drawLine(12 * s, 16 * s, 19 * s, 9 * s, paint)
+        }
+        else -> canvas.drawLine(5 * s, 12 * s, 19 * s, 12 * s, paint)
       }
     }
   }
