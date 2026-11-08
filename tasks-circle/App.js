@@ -101,9 +101,6 @@ function Calendar({ value, onPick }) {
 
 function Main() {
   const [tasks, setTasks] = useState([]);
-  const [ideas, setIdeas] = useState([]);
-  const [tab, setTab] = useState('tasks');
-  const [ideaText, setIdeaText] = useState('');
   const [on, setOn] = useState(false);
   const [text, setText] = useState('');
   const [date, setDate] = useState('');   // optional: empty = this task has no date
@@ -111,7 +108,7 @@ function Main() {
   const [showCal, setShowCal] = useState(false);
   const wantOn = useRef(false);   // waiting for the overlay permission
 
-  const reload = () => { setTasks(TasksOverlay.getTasks()); setIdeas(TasksOverlay.getIdeas()); };
+  const reload = () => { setTasks(TasksOverlay.getTasks()); };
 
   const askNotifications = async () => {
     if (Platform.OS === 'android' && Platform.Version >= 33) {
@@ -146,7 +143,6 @@ function Main() {
   // Sync with the native side whenever the app comes back to the front.
   const refresh = useCallback(() => {
     setTasks(TasksOverlay.getTasks());
-    setIdeas(TasksOverlay.getIdeas());
     if (wantOn.current && TasksOverlay.canDrawOverlays()) {
       wantOn.current = false;
       turnOn();
@@ -217,33 +213,7 @@ function Main() {
         </View>
         {msg ? <Text selectable style={[s.small, { color: C.red, marginBottom: 10 }]}>{msg}</Text> : null}
 
-        <View style={s.tabs}>
-          {['tasks', 'ideas'].map((k) => (
-            <Pressable key={k} onPress={() => setTab(k)} style={[s.tabBtn, tab === k && s.tabOn]}>
-              <Text style={[s.tabTxt, tab === k && { color: C.paper }]}>{k === 'tasks' ? 'Tasks' : 'Ideas'}</Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {tab === 'ideas' ? (
-          <View style={s.list}>
-            {ideas.length === 0 ? <Text style={s.empty}>No ideas yet. Tap the circle and write one.</Text> : ideas.map((i) => (
-              <View key={i.id} style={s.task}>
-                <View style={s.taskCol}>
-                  <Text style={s.taskText}>{i.text}</Text>
-                  <Text style={s.taskDate}>{new Date(i.ts).toLocaleDateString()}</Text>
-                </View>
-                <Pressable onPress={() => { TasksOverlay.deleteIdea(i.id); reload(); }} hitSlop={8}><Text style={s.arrowTxt}>✕</Text></Pressable>
-              </View>
-            ))}
-            <View style={[s.task, s.addRow]}>
-              <TextInput style={s.input} value={ideaText} onChangeText={setIdeaText} placeholder="Write your idea…" placeholderTextColor={C.hint}
-                onSubmitEditing={() => { const t = ideaText.trim(); if (t) { TasksOverlay.addIdea(t); setIdeaText(''); reload(); } }} returnKeyType="done" />
-            </View>
-          </View>
-        ) : null}
-
-        <View style={[s.list, tab !== 'tasks' && { display: 'none' }]}>
+        <View style={s.list}>
           {tasks.length === 0 ? <Text style={s.empty}>No tasks yet</Text> : tasks.map((t, i) => (
             <View key={t.id} style={s.task}>
               <Pressable onPress={() => removeTask(t.id)} style={[s.round, s.minusBtn]} hitSlop={8}>
