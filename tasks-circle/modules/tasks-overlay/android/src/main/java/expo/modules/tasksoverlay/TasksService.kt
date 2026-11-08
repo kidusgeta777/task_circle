@@ -645,6 +645,7 @@ class TasksService : Service() {
   // A small strip fixed at the top while the popup is open. The pencil edits its text.
   private var note: LinearLayout? = null
   private var noteEditing = false
+  private var pencilRef: TextView? = null
   private var ideaInput: EditText? = null
 
   private fun noteContains(x: Float, y: Float): Boolean {
@@ -669,6 +670,7 @@ class TasksService : Service() {
     tv.textSize = 12f
     tv.gravity = Gravity.CENTER
     row.addView(tv, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+    tv.setOnClickListener { pencilRef?.performClick() }
 
     val et = EditText(this)
     et.background = null
@@ -687,6 +689,7 @@ class TasksService : Service() {
     pencil.textSize = 15f
     pencil.setPadding(px(10), px(4), px(4), px(4))
     row.addView(pencil, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+    pencilRef = pencil
 
     val w = (resources.displayMetrics.widthPixels * 0.9f).toInt()
     val lp = WindowManager.LayoutParams(
@@ -708,9 +711,11 @@ class TasksService : Service() {
       tv.visibility = View.VISIBLE
       pencil.text = "✎"
       noteEditing = false
-      lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-      runCatching { wm.updateViewLayout(row, lp) }
+      lp.flags = (lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) and
+        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL.inv()
       runCatching { imm.hideSoftInputFromWindow(row.windowToken, 0) }
+      runCatching { wm.updateViewLayout(row, lp) }
+      setPanelFocusable(true)   // give the keyboard focus back to the task box
       scheduleAutoClose()
     }
     et.setOnEditorActionListener { _, actionId, _ ->
@@ -726,15 +731,32 @@ class TasksService : Service() {
         tv.visibility = View.GONE
         et.visibility = View.VISIBLE
         pencil.text = "✓"
-        lp.flags = lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        runCatching { wm.updateViewLayout(row, lp) }
-        row.post {
-          et.requestFocus()
-          runCatching { imm.showSoftInput(et, InputMethodManager.SHOW_IMPLICIT) }
+        // The panel window sits above this strip and is focusable, so it keeps the keyboard focus and the
+        // strip's text box can never type. Make the panel non-focusable while editing, and put the strip on top.
+        setPanelFocusable(false)
+        lp.flags = (lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()) or
+          WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+        main.post {
+          if (!noteEditing) return@post
+          runCatching { wm.removeViewImmediate(row) }
+          runCatching { wm.addView(row, lp) }   // re-added last = drawn above the panel
+          row.post {
+            et.requestFocus()
+            runCatching { imm.showSoftInput(et, InputMethodManager.SHOW_IMPLICIT) }
+          }
         }
       }
     }
     runCatching { wm.addView(row, lp); note = row }
+  }
+
+  /** While the top strip is being edited the panel must not hold window focus, or the keyboard goes to the panel. */
+  private fun setPanelFocusable(focusable: Boolean) {
+    val p = panel ?: return
+    val lp = panelLp ?: return
+    lp.flags = if (focusable) lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+    else lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+    if (p.isAttachedToWindow) runCatching { wm.updateViewLayout(p, lp) }
   }
 
   private fun hideNote() {
