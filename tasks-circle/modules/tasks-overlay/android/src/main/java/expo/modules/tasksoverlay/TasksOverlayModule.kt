@@ -66,10 +66,6 @@ class TasksOverlayModule : Module() {
       TasksPrefs.swapTasks(ctx, a, b)
     }
 
-    Function("getIdeas") { TasksPrefs.ideasJson(ctx) }
-    Function("addIdea") { text: String -> TasksPrefs.addIdea(ctx, text) }
-    Function("deleteIdea") { id: String -> TasksPrefs.deleteIdea(ctx, id) }
-    Function("setIdeas") { json: String -> TasksPrefs.setIdeasJson(ctx, json) }
 
     Function("clearTasks") {
       TasksPrefs.clearTasks(ctx)
