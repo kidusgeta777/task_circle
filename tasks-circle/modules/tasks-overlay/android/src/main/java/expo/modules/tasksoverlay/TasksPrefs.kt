@@ -123,35 +123,6 @@ object TasksPrefs {
     sp(c).edit().putString("tasks", "[]").commit()
   }
 
-  // ---- ideas (newest first) ----
-  fun ideasJson(c: Context): String = sp(c).getString("ideas", "[]") ?: "[]"
-  private fun readIdeas(c: Context): JSONArray =
-    try { JSONArray(ideasJson(c)) } catch (e: Exception) { JSONArray() }
-
-  @Synchronized
-  fun addIdea(c: Context, text: String) {
-    val old = readIdeas(c)
-    val now = System.currentTimeMillis()
-    val out = JSONArray()
-    out.put(JSONObject().put("id", now.toString() + "-" + (Math.random() * 100000).toInt()).put("text", text).put("ts", now))
-    for (i in 0 until old.length()) out.put(old.getJSONObject(i))
-    sp(c).edit().putString("ideas", out.toString()).commit()
-  }
-
-  @Synchronized
-  fun deleteIdea(c: Context, id: String) {
-    val old = readIdeas(c)
-    val out = JSONArray()
-    for (i in 0 until old.length()) { val o = old.getJSONObject(i); if (o.optString("id") != id) out.put(o) }
-    sp(c).edit().putString("ideas", out.toString()).commit()
-  }
-
-  @Synchronized
-  fun setIdeasJson(c: Context, json: String) {
-    val arr = try { JSONArray(json) } catch (e: Exception) { return }
-    sp(c).edit().putString("ideas", arr.toString()).commit()
-  }
-
   // ---- the text shown in the strip at the top of the popup ----
   fun noteText(c: Context): String = sp(c).getString("note", "Saved on this phone") ?: "Saved on this phone"
   fun setNoteText(c: Context, text: String) {
