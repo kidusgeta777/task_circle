@@ -315,44 +315,6 @@ class TasksService : Service() {
 
     root.addView(addRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
-    // the idea row: [ Write your idea…      (+) ]  (saved on the phone, not listed here)
-    val ideaRow = LinearLayout(this)
-    ideaRow.orientation = LinearLayout.HORIZONTAL
-    ideaRow.gravity = Gravity.CENTER_VERTICAL
-    ideaRow.setPadding(px(16), px(0), px(8), px(6))
-    val ie = EditText(this)
-    ie.background = null
-    ie.setTextColor(Color.WHITE)
-    ie.setHintTextColor(Color.argb(170, 255, 255, 255))
-    ie.hint = "Write your idea…"
-    ie.textSize = 15f
-    ie.minHeight = px(40)
-    ie.setPadding(0, px(6), px(8), px(6))
-    ie.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-    ie.imeOptions = EditorInfo.IME_ACTION_DONE
-    val saveIdea = {
-      val t = ie.text.toString().trim()
-      if (t.isNotEmpty()) {
-        TasksPrefs.addIdea(this, t)
-        ie.setText("")
-        android.widget.Toast.makeText(this, "Saved", android.widget.Toast.LENGTH_SHORT).show()
-      }
-    }
-    ie.setOnEditorActionListener { _, actionId, _ ->
-      if (actionId == EditorInfo.IME_ACTION_DONE) { saveIdea(); true } else false
-    }
-    ie.addTextChangedListener(object : android.text.TextWatcher {
-      override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
-      override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) { scheduleAutoClose() }
-      override fun afterTextChanged(s: android.text.Editable?) {}
-    })
-    ideaInput = ie
-    ideaRow.addView(ie, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-    val iplus = FrameLayout(this)
-    iplus.addView(IconView(this, IconView.PLUS), FrameLayout.LayoutParams(px(16), px(16), Gravity.CENTER))
-    iplus.setOnClickListener { saveIdea() }
-    ideaRow.addView(iplus, LinearLayout.LayoutParams(px(34), px(34)))
-    root.addView(ideaRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
     showNote()
 
     val lp = WindowManager.LayoutParams(
@@ -384,7 +346,7 @@ class TasksService : Service() {
 
   // ---- auto-collapse: closes by itself when nobody is typing in it ----
   private val autoClose = Runnable {
-    if (input?.hasFocus() == true || ideaInput?.hasFocus() == true || noteEditing || calOpen) scheduleAutoClose()   // still typing or picking a date: keep it open
+    if (input?.hasFocus() == true || noteEditing || calOpen) scheduleAutoClose()   // still typing or picking a date: keep it open
     else closePanel()
   }
 
@@ -646,7 +608,6 @@ class TasksService : Service() {
   private var note: LinearLayout? = null
   private var noteEditing = false
   private var pencilRef: TextView? = null
-  private var ideaInput: EditText? = null
 
   private fun noteContains(x: Float, y: Float): Boolean {
     val n = note ?: return false
@@ -775,7 +736,6 @@ class TasksService : Service() {
     }
     runCatching { wm.removeView(p) }
     hideNote()
-    ideaInput = null
     panel = null
     panelLp = null
     scroll = null
