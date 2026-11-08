@@ -155,8 +155,8 @@ class TasksService : Service() {
     return g
   }
 
-  private val panelFill get() = Color.argb(110, 0, 0, 0)
-  private val outline get() = Color.argb(120, 255, 255, 255)
+  private val panelFill get() = Color.argb(235, 0, 0, 0)
+  private val outline get() = Color.argb(160, 255, 255, 255)
 
   private fun addBubble() {
     val dm = resources.displayMetrics
@@ -275,7 +275,7 @@ class TasksService : Service() {
     val et = EditText(this)
     et.background = null
     et.setTextColor(Color.WHITE)
-    et.setHintTextColor(Color.argb(170, 255, 255, 255))
+    et.setHintTextColor(Color.argb(210, 255, 255, 255))
     et.hint = "Add a task…"
     et.textSize = 15f
     et.minHeight = px(40)
@@ -623,11 +623,11 @@ class TasksService : Service() {
     row.orientation = LinearLayout.HORIZONTAL
     row.gravity = Gravity.CENTER
     row.setPadding(px(14), px(4), px(10), px(4))
-    row.background = roundBg(Color.argb(100, 0, 0, 0), px(14), Color.argb(70, 255, 255, 255))
+    row.background = roundBg(Color.argb(240, 0, 0, 0), px(14), Color.argb(150, 255, 255, 255))
 
     val tv = TextView(this)
     tv.text = TasksPrefs.noteText(this)
-    tv.setTextColor(Color.argb(220, 255, 255, 255))
+    tv.setTextColor(Color.WHITE)
     tv.textSize = 12f
     tv.gravity = Gravity.CENTER
     row.addView(tv, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -646,7 +646,7 @@ class TasksService : Service() {
 
     val pencil = TextView(this)
     pencil.text = "✎"
-    pencil.setTextColor(Color.argb(220, 255, 255, 255))
+    pencil.setTextColor(Color.WHITE)
     pencil.textSize = 15f
     pencil.setPadding(px(10), px(4), px(4), px(4))
     row.addView(pencil, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
