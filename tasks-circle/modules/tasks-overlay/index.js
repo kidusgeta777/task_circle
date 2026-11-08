@@ -41,10 +41,6 @@ const web = {
     set('list', JSON.stringify(l));
   },
   clearTasks: () => set('list', '[]'),
-  getIdeas: () => { try { const a = JSON.parse(get('ideas', '[]')); return Array.isArray(a) ? a : []; } catch (e) { return []; } },
-  addIdea: (text) => { const now = Date.now(); let a = []; try { a = JSON.parse(get('ideas', '[]')); } catch (e) { /* ignore */ } set('ideas', JSON.stringify([{ id: now.toString(36), text, ts: now }, ...a])); },
-  deleteIdea: (id) => { let a = []; try { a = JSON.parse(get('ideas', '[]')); } catch (e) { /* ignore */ } set('ideas', JSON.stringify(a.filter((i) => i.id !== id))); },
-  setIdeas: (arr) => set('ideas', JSON.stringify(arr)),
 };
 
 const android = {
@@ -64,11 +60,6 @@ const android = {
   /** Swaps the positions of two tasks (used to move a task up or down). */
   swapTasks: (a, b) => safe(() => Native.swapTasks(a, b), undefined),
   clearTasks: () => safe(() => Native.clearTasks(), undefined),
-  /** Ideas saved from the circle, newest first: [{ id, text, ts }] */
-  getIdeas: () => safe(() => { const a = JSON.parse(Native.getIdeas()); return Array.isArray(a) ? a : []; }, []),
-  addIdea: (text) => safe(() => Native.addIdea(text), undefined),
-  deleteIdea: (id) => safe(() => Native.deleteIdea(id), undefined),
-  setIdeas: (arr) => safe(() => Native.setIdeas(JSON.stringify(arr)), undefined),
 };
 
 export default Platform.OS === 'web' ? web : android;
